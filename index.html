@@ -1,0 +1,170 @@
+<html>
+
+<head>
+    <title>test</title>
+    <style>
+        video {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <input id='zoomer' type="range" max=1 min=0 value="1" step=0.001>
+        <button onclick='record()'>Record</button>
+        <button onclick='stopRecording()'>Stop</button>
+        <button onclick='download()'>Get</button>
+    </div>
+    <script src='/pixi.min.js'></script>
+    <script src='/main.js'></script>
+    <video id='vid' autoplay></video>
+    <script>
+
+        var app = new PIXI.Application({ width: 1080, height: 1920 });
+        document.body.appendChild(app.view);
+
+        var constraints = window.constraints = {
+            audio: false,
+            video: true
+        };
+
+        function handleSuccess(videoStream) {
+            console.log(videoStream);
+            const video = document.querySelector('#vid');
+            const videoTracks = videoStream.getVideoTracks();
+            window.videoStream = videoStream; // make variable available to browser console
+            video.srcObject = videoStream;
+            var base = PIXI.VideoBaseTexture.fromVideo(vid, 0);
+            console.log(base);
+            base.wrapMode = PIXI.WRAP_MODES.REPEAT;
+
+            var v = new PIXI.Texture(base);
+
+            console.log(v);
+            var container = new PIXI.Container();
+            var sprite = new PIXI.Sprite(v);
+            sprite.anchor.x = sprite.anchor.y = 0.5;
+            container.addChild(sprite);
+            app.stage.addChild(container);
+
+
+            app.stop();
+            sprite.height = 800;
+            sprite.width = 1080;
+
+            container.position.y = 1920 / 2;
+            container.position.x = 1080 / 2;
+
+
+            PIXI.loader.add('shader', '/frag.glsl')
+                .load(onLoaded);
+
+            var filter;
+            // Handle the load completed
+            function onLoaded(loader, res) {
+                filter = new PIXI.Filter(null, res.shader.data);
+                sprite.filters = [filter];
+                app.start();
+            }
+
+            var eased = 0;
+            // Animate the filter
+            app.ticker.add(function (delta) {
+                eased += (zoomer.value - eased) * 0.1;
+                filter.uniforms.sampler1 = v;
+                filter.uniforms.control = { x: 10, y: sprite.height / sprite.width };
+                filter.uniforms.sz = { x: sprite.width / v.orig.width, y: sprite.height / v.orig.height };
+                filter.uniforms.rotation = [180 - 180 * eased, 0, 90];
+            });
+
+        }
+
+        function handleError(error) {
+            console.log(error);
+        }
+
+        navigator.mediaDevices.enumerateDevices().then((v) => {
+            for (var i = 0; i < v.length; i++) {
+                if (v[i].label == 'RICOH THETA V FullHD') {
+                    constraints = window.constraints = {
+                        audio: false,
+                        video: {
+                            deviceId: {
+                                exact: v[i].deviceId
+                            }
+                        }
+                    };
+                    break;
+                }
+            }
+
+            return navigator.mediaDevices
+                .getUserMedia(constraints)
+                .then(handleSuccess)
+                .catch(handleError);
+        });
+
+        const mediaSource = new MediaSource();
+        mediaSource.addEventListener('sourceopen', handleSourceOpen, false);
+        let mediaRecorder;
+        let recordedBlobs = [];
+        let sourceBuffer;
+
+        const canvas = document.querySelector('canvas');
+
+        const stream = canvas.captureStream(); // frames per second
+
+        console.log('Started stream capture from canvas element: ', stream);
+
+        function handleSourceOpen(event) {
+            console.log('MediaSource opened');
+            sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
+            console.log('Source buffer: ', sourceBuffer);
+        }
+
+        function handleDataAvailable(event) {
+            if (event.data && event.data.size > 0) {
+                recordedBlobs.push(event.data);
+            }
+        }
+
+        function handleStop(event) {
+            console.log('Recorder stopped: ', event);
+            const superBuffer = new Blob(recordedBlobs, { type: 'video/webm' });
+        }
+        let options = { mimeType: 'video/webm' };
+        mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorder.onstop = handleStop;
+        mediaRecorder.ondataavailable = handleDataAvailable;
+        function record() {
+            console.log('Created MediaRecorder', mediaRecorder, 'with options', options);
+            mediaRecorder.start(60); // collect 100ms of data
+            console.log('MediaRecorder started', mediaRecorder);
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            console.log('Recorded Blobs: ', recordedBlobs);
+        }
+
+        function download() {
+            const blob = new Blob(recordedBlobs, { type: 'video/webm' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'test.webm';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        }
+
+        // setTimeout(record, 1000);
+    </script>
+</body>
+
+</html>
